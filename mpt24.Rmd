@@ -1,0 +1,718 @@
+---
+title: "Assignment 6"
+author: "Statistics and Data Science 365/565"
+date: "Due: April 19th (before 11:59 pm)"
+output:
+  html_document: default
+  pdf_document: 
+     highlight: haddock
+params:
+  ShowCode: no
+  ShowOut: no
+---
+
+```{r}
+setwd("/Users/mark/Documents/Spring2019Classes/S&DS365/Homework/Homework6")
+```
+
+# Problem 1
+
+## Problem 1 Part a
+
+```{r, out.width = "50%"}
+question1Path <- "/Users/mark/Documents/Spring2019Classes/S&DS365/Homework/Homework6/Question1a.JPG"
+knitr::include_graphics(path = question1Path)
+```
+
+
+## Problem 1 Part b
+
+Writing our local objective in the form from part (a) poses some computational challenges, since the matrix in question is dense and very high-dimensional. However, we can instead choose to construct embeddings as the rank D
+
+By constructing our word embeddings as the rank-d SVD of a |V| x |V| matrix M, calculations can be made more computationally efficient. In particular, since we can rewrite $v_{w}^{T}v_{c}$ as a function of the count data (w, c), w, and c, our procedure is much more efficient on large amounts of words. Moreover, using SVD on the matrix M 
+
+Writing our local objective in the form from part (a) poses some computational challenges, since the matrix in question is dense and very high-dimensional. However, we can instead choose to construct embeddings as a rank-d SVD of a |V| x |V| matrix M, thereby approximating the high-dimensional original matrix with a more computationally efficient one instead. Specifically, the matrix that we would use is $$ M = U * (\sum) * V^{T}$$, which upon simplification equals $$U (\sum)^{\frac{1}{2}}(\sum)^{\frac{1}{2}}V^T$$ where $(\sum)_{d}$ is the diagonal matrix formed from the top d singular values and $U_{d}$ and $V_{d}$ are the matrices produced by selecting the corresponding coumns from U and V from the SVD of M. 
+
+# Problem 2
+
+<!-- Put the code here for generating the three models here -->
+
+```{r}
+library(text2vec)
+library(Matrix)
+text8_file <- "/Users/mark/Documents/Spring2019Classes/S&DS365/Homework/Homework6/text8"
+wiki <- readLines(text8_file, n = 1, warn = FALSE)
+tokens <- space_tokenizer(wiki)
+it <- itoken(tokens, progressbar = FALSE)
+vocab <- create_vocabulary(it)
+vocab <- prune_vocabulary(vocab, term_count_min = 100L)
+vectorizer <- vocab_vectorizer(vocab)
+```
+
+PMI Embeddings:
+
+```{r}
+tcm <- create_tcm(it, vectorizer, skip_grams_window = 5L, skip_grams_window_context = "symmetric", weights = 1 / rep(1, 5L))
+
+co <- tcm + t(tcm)
+
+dimnames(co) <- dimnames(tcm)
+
+# the cooccurence matrix looks at how often a combination of word + context appears
+
+# rownames(co)
+# colnames(co)
+```
+
+I will create the matrix M in the form of log(#$(w_{i}, w_{i}) * |D|$) - log(#($w_{i}$ * #$(w_{j})$)) - log k$
+
+
+```{r}
+# To find the first term:
+
+D <- length(co)
+term1 <- log((co + 1) * D)
+
+# To find the second term:
+rowWords <- rowSums(co)
+columnWords <- colSums(co)
+productRowColumnSums <- rowWords %*% t(columnWords)
+term2 <- log(productRowColumnSums)
+
+# Our third term, log(k), is 0 since k = 1
+
+### Calculating the matrix M: 
+M <- term1 - term2
+```
+
+```{r}
+# Now to take the rank-D SVD:
+library(irlba)
+svd <- irlba(M, 50)
+```
+
+```{r}
+# Now to construct W:
+U <- svd$u
+sigma <- diag(sqrt(svd$d))
+
+W <- U %*% sigma
+
+# Set rownames to match actual words
+rownames(W) <- rownames(co) # These are the learned embeddings
+```
+
+Local GloVe Embeddings
+```{r, message = FALSE, warning = FALSE, error = FALSE}
+# Run stochastic gradient descent to obtain GloVe word embeddings stored in the g.embed variable
+set.seed(1987)
+glove_local <- GlobalVectors$new(word_vectors_size = 50, 
+                           vocabulary = vocab, 
+                           x_max = 10)
+g.embed <- fit_transform(tcm, glove_local, n_iter = 20)
+```
+
+Pre-trained GloVe Embeddings
+```{r}
+# Load embeddings
+load("/Users/mark/Documents/Spring2019Classes/S&DS365/Homework/Homework6/pre-trained-glove.RData")
+```
+
+## Problem 2 Part a
+
+```{r, message = FALSE, warning = FALSE, error = FALSE}
+library(tidyverse)
+```
+
+For the PMI embeddings
+
+```{r}
+PMIClosest <- sim2(W)
+
+#### Looking at Yale:
+PMIClosestYale <- PMIClosest[which(rownames(PMIClosest) == "yale"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+PMIClosestYale[1:5]
+
+#### Looking at physics:
+PMIClosestPhysics <- PMIClosest[which(rownames(PMIClosest) == "physics"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+PMIClosestPhysics[1:5]
+
+### Looking at republican:
+PMIClosestRepublican <- PMIClosest[which(rownames(PMIClosest) == "republican"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+PMIClosestRepublican[1:5]
+
+### Looking at einstein:
+PMIClosestEinstein <- PMIClosest[which(rownames(PMIClosest) == "einstein"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+PMIClosestEinstein[1:5]
+
+### Looking at algebra:
+PMIClosestAlgebra <- PMIClosest[which(rownames(PMIClosest) == "algebra"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+PMIClosestAlgebra[1:5]
+
+### Looking at fish:
+PMIClosestFish <- PMIClosest[which(rownames(PMIClosest) == "fish"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+PMIClosestFish[1:5]
+```
+
+For the local GloVe embeddings
+
+```{r}
+localGloveClosest <- sim2(g.embed)
+#### Looking at Yale:
+localGloveClosestYale <- localGloveClosest[which(rownames(localGloveClosest) == "yale"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+localGloveClosestYale[1:5]
+
+#### Looking at physics:
+localGloveClosestPhysics <- localGloveClosest[which(rownames(localGloveClosest) == "physics"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+localGloveClosestPhysics[1:5]
+
+### Looking at republican:
+localGloveClosestRepublican <- localGloveClosest[which(rownames(localGloveClosest) == "republican"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+localGloveClosestRepublican[1:5]
+
+### Looking at einstein:
+localGloveClosestEinstein <- localGloveClosest[which(rownames(localGloveClosest) == "einstein"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+localGloveClosestEinstein[1:5]
+
+### Looking at algebra:
+localGloveClosestAlgebra <- localGloveClosest[which(rownames(localGloveClosest) == "algebra"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+localGloveClosestAlgebra[1:5]
+
+### Looking at fish:
+localGloveClosestFish <- localGloveClosest[which(rownames(localGloveClosest) == "fish"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+localGloveClosestFish[1:5]
+```
+
+For the pre-trained GloVe embeddings
+
+```{r}
+pretrainedGloveClosest <- sim2(pt.glove)
+
+#### Looking at Yale:
+pretrainedGloveClosestYale <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "yale"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+pretrainedGloveClosestYale[1:5]
+
+#### Looking at physics:
+pretrainedGloveClosestPhysics <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "physics"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+pretrainedGloveClosestPhysics[1:5]
+
+### Looking at republican:
+pretrainedGloveClosestRepublican <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "republican"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+pretrainedGloveClosestRepublican[1:5]
+
+### Looking at einstein:
+pretrainedGloveClosestEinstein <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "einstein"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+pretrainedGloveClosestEinstein[1:5]
+
+### Looking at algebra:
+pretrainedGloveClosestAlgebra <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "algebra"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+pretrainedGloveClosestAlgebra[1:5]
+
+### Looking at fish:
+pretrainedGloveClosestFish <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "fish"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+pretrainedGloveClosestFish[1:5]
+```
+
+I will choose the following query words: card, computer, cotton, child, corn. I will look at the 5 closest words for each:
+
+Using PMI:
+```{r}
+#### Looking at card:
+PMIClosestCard <- PMIClosest[which(rownames(PMIClosest) == "card"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+PMIClosestCard[1:5]
+
+#### Looking at computer:
+PMIClosestComputer <- PMIClosest[which(rownames(PMIClosest) == "computer"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+PMIClosestComputer[1:5]
+
+### Looking at cotton:
+PMIClosestCotton <- PMIClosest[which(rownames(PMIClosest) == "cotton"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+PMIClosestCotton[1:5]
+
+### Looking at child:
+PMIClosestChild <- PMIClosest[which(rownames(PMIClosest) == "child"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+PMIClosestChild[1:5]
+
+### Looking at corn:
+PMIClosestCorn <- PMIClosest[which(rownames(PMIClosest) == "corn"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+PMIClosestCorn[1:5]
+```
+
+Using local GloVe
+```{r}
+#### Looking at card:
+localGloveClosestCard <- localGloveClosest[which(rownames(localGloveClosest) == "card"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+localGloveClosestCard[1:5]
+
+#### Looking at computer:
+localGloveClosestComputer <- localGloveClosest[which(rownames(localGloveClosest) == "computer"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+localGloveClosestComputer[1:5]
+
+### Looking at cotton:
+localGloveClosestCotton <- localGloveClosest[which(rownames(localGloveClosest) == "cotton"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+localGloveClosestCotton[1:5]
+
+### Looking at child:
+localGloveClosestChild <- localGloveClosest[which(rownames(localGloveClosest) == "child"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+localGloveClosestChild[1:5]
+
+### Looking at corn:
+localGloveClosestCorn <- localGloveClosest[which(rownames(localGloveClosest) == "corn"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+localGloveClosestCorn[1:5]
+```
+
+Using pretrained GloVe
+```{r}
+#### Looking at card:
+pretrainedGloveClosestCard <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "card"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+pretrainedGloveClosestCard[1:5]
+
+#### Looking at computer:
+pretrainedGloveClosestComputer <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "computer"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+pretrainedGloveClosestComputer[1:5]
+
+### Looking at cotton:
+pretrainedGloveClosestCotton <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "cotton"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+pretrainedGloveClosestCotton[1:5]
+
+### Looking at child:
+pretrainedGloveClosestChild <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "child"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+pretrainedGloveClosestChild[1:5]
+
+### Looking at corn:
+pretrainedGloveClosestCorn <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "corn"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+pretrainedGloveClosestCorn[1:5]
+```
+
+Based on my findings, it seems like the words that are closest in the embedding space (both in the example and in the query words that I chose) are the ones that aren't necessarily synonyms, but are often part of a similar "category", or are used in similar contexts. For words that have a pretty clear, singular meaning (i.e. corn), the words that it was closest to were clearly part of one category (in this case, crops). However, for words that are typically used in multiple contexts, such as "card", the words that were closest in Euclidean distance didn't necessarily fit into one category, since cards can be used in the context of card and casino games (hence "game" and "check"), but card can also be used in reference to money (hence why it's close to "credit"). 
+
+## Problem 2 Part b
+
+Using PMI
+
+```{r}
+# For france:paris::england:?
+missingEnglandPMI <- PMIClosest[which(rownames(PMIClosest) == "paris"), ] - PMIClosest[which(rownames(PMIClosest) == "france"), ] + PMIClosest[which(rownames(PMIClosest) == "england"), ]
+
+
+missingEnglandPMI_sorted <- missingEnglandPMI %>% sort(decreasing = TRUE)
+missingEnglandPMI_sorted[1:5]
+
+# For france:paris::germany:?
+missingGermanyPMI <- PMIClosest[which(rownames(PMIClosest) == "paris"), ] - PMIClosest[which(rownames(PMIClosest) == "france"), ] + PMIClosest[which(rownames(PMIClosest) == "germany"), ]
+
+
+missingGermanyPMI_sorted <- missingGermanyPMI %>% sort(decreasing = TRUE)
+missingGermanyPMI_sorted[1:5]
+
+# For queen:woman::king:?
+missingKingPMI <- PMIClosest[which(rownames(PMIClosest) == "woman"), ] - PMIClosest[which(rownames(PMIClosest) == "queen"), ] + PMIClosest[which(rownames(PMIClosest) == "king"), ]
+
+
+missingKingPMI_sorted <- missingKingPMI %>% sort(decreasing = TRUE)
+missingKingPMI_sorted[1:5]
+```
+
+Using localGlove
+
+```{r}
+# For france:paris::england:?
+missingEnglandlocalGlove <- localGloveClosest[which(rownames(localGloveClosest) == "paris"), ] - localGloveClosest[which(rownames(localGloveClosest) == "france"), ] + localGloveClosest[which(rownames(localGloveClosest) == "england"), ]
+
+
+missingEnglandlocalGlove_sorted <- missingEnglandlocalGlove %>% sort(decreasing = TRUE)
+missingEnglandlocalGlove_sorted[1:5]
+
+# For france:paris::germany:?
+missingGermanylocalGlove <- localGloveClosest[which(rownames(localGloveClosest) == "paris"), ] - localGloveClosest[which(rownames(localGloveClosest) == "france"), ] + localGloveClosest[which(rownames(localGloveClosest) == "germany"), ]
+
+
+missingGermanylocalGlove_sorted <- missingGermanylocalGlove %>% sort(decreasing = TRUE)
+missingGermanylocalGlove_sorted[1:5]
+
+# For queen:woman::king:?
+missingKinglocalGlove <- localGloveClosest[which(rownames(localGloveClosest) == "woman"), ] - localGloveClosest[which(rownames(localGloveClosest) == "queen"), ] + localGloveClosest[which(rownames(localGloveClosest) == "king"), ]
+
+
+missingKinglocalGlove_sorted <- missingKinglocalGlove %>% sort(decreasing = TRUE)
+missingKinglocalGlove_sorted[1:5]
+```
+
+Using pretrained GloVe
+
+```{r}
+# For france:paris::england:?
+missingEnglandpretrainedGlove <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "paris"), ] - pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "france"), ] + pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "england"), ]
+
+
+missingEnglandpretrainedGlove_sorted <- missingEnglandpretrainedGlove %>% sort(decreasing = TRUE)
+missingEnglandpretrainedGlove_sorted[1:5]
+
+# For france:paris::germany:?
+missingGermanypretrainedGlove <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "paris"), ] - pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "france"), ] + pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "germany"), ]
+
+
+missingGermanypretrainedGlove_sorted <- missingGermanypretrainedGlove %>% sort(decreasing = TRUE)
+missingGermanypretrainedGlove_sorted[1:5]
+
+# For queen:woman::king:?
+missingKingpretrainedGlove <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "woman"), ] - pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "queen"), ] + pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "king"), ]
+
+
+missingKingpretrainedGlove_sorted <- missingKingpretrainedGlove %>% sort(decreasing = TRUE)
+missingKingpretrainedGlove_sorted[1:5]
+```
+
+My analogies will be: 
+(1) Harvard:Yale::Dartmouth:?
+
+```{r}
+# With PMI:
+missingDartmouthPMI <- PMIClosest[which(rownames(PMIClosest) == "yale"), ] - PMIClosest[which(rownames(PMIClosest) == "harvard"), ] + PMIClosest[which(rownames(PMIClosest) == "dartmouth"), ]
+
+
+missingDartmouthPMI_sorted <- missingDartmouthPMI %>% sort(decreasing = TRUE)
+missingDartmouthPMI_sorted[1:5]
+
+# With local glove
+missingDartmouthlocalGlove <- localGloveClosest[which(rownames(localGloveClosest) == "yale"), ] - localGloveClosest[which(rownames(localGloveClosest) == "harvard"), ] + localGloveClosest[which(rownames(localGloveClosest) == "dartmouth"), ]
+
+
+missingDartmouthlocalGlove_sorted <- missingDartmouthlocalGlove %>% sort(decreasing = TRUE)
+missingDartmouthlocalGlove_sorted[1:5]
+
+# With pretrained glove
+missingDartmouthpretrainedGlove <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "yale"), ] - pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "harvard"), ] + pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "dartmouth"), ]
+
+
+missingDartmouthpretrainedGlove_sorted <- missingDartmouthpretrainedGlove %>% sort(decreasing = TRUE)
+missingDartmouthpretrainedGlove_sorted[1:5]
+```
+
+(2) Good:Bad::Fast:?
+
+```{r}
+# With PMI:
+missingFastPMI <- PMIClosest[which(rownames(PMIClosest) == "bad"), ] - PMIClosest[which(rownames(PMIClosest) == "good"), ] + PMIClosest[which(rownames(PMIClosest) == "fast"), ]
+
+
+missingFastPMI_sorted <- missingFastPMI %>% sort(decreasing = TRUE)
+missingFastPMI_sorted[1:5]
+
+# With local glove
+missingFastlocalGlove <- localGloveClosest[which(rownames(localGloveClosest) == "bad"), ] - localGloveClosest[which(rownames(localGloveClosest) == "good"), ] + localGloveClosest[which(rownames(localGloveClosest) == "fast"), ]
+
+
+missingFastlocalGlove_sorted <- missingFastlocalGlove %>% sort(decreasing = TRUE)
+missingFastlocalGlove_sorted[1:5]
+
+# With pretrained glove
+missingFastpretrainedGlove <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "bad"), ] - pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "good"), ] + pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "fast"), ]
+
+
+missingFastpretrainedGlove_sorted <- missingFastpretrainedGlove %>% sort(decreasing = TRUE)
+missingFastpretrainedGlove_sorted[1:5]
+```
+
+(3) China:Asia::Italy:?
+
+```{r}
+# With PMI:
+missingItalyPMI <- PMIClosest[which(rownames(PMIClosest) == "asia"), ] - PMIClosest[which(rownames(PMIClosest) == "china"), ] + PMIClosest[which(rownames(PMIClosest) == "italy"), ]
+
+
+missingItalyPMI_sorted <- missingItalyPMI %>% sort(decreasing = TRUE)
+missingItalyPMI_sorted[1:5]
+
+# With local glove
+missingItalylocalGlove <- localGloveClosest[which(rownames(localGloveClosest) == "asia"), ] - localGloveClosest[which(rownames(localGloveClosest) == "china"), ] + localGloveClosest[which(rownames(localGloveClosest) == "italy"), ]
+
+
+missingItalylocalGlove_sorted <- missingItalylocalGlove %>% sort(decreasing = TRUE)
+missingItalylocalGlove_sorted[1:5]
+
+# With pretrained glove
+missingItalypretrainedGlove <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "asia"), ] - pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "china"), ] + pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "italy"), ]
+
+
+missingItalypretrainedGlove_sorted <- missingItalypretrainedGlove %>% sort(decreasing = TRUE)
+missingItalypretrainedGlove_sorted[1:5]
+```
+
+(4) Man:Doctor::Woman:?
+
+```{r}
+# With PMI:
+missingWomanPMI <- PMIClosest[which(rownames(PMIClosest) == "doctor"), ] - PMIClosest[which(rownames(PMIClosest) == "man"), ] + PMIClosest[which(rownames(PMIClosest) == "woman"), ]
+
+
+missingWomanPMI_sorted <- missingWomanPMI %>% sort(decreasing = TRUE)
+missingWomanPMI_sorted[1:5]
+
+# With local glove
+missingWomanlocalGlove <- localGloveClosest[which(rownames(localGloveClosest) == "doctor"), ] - localGloveClosest[which(rownames(localGloveClosest) == "man"), ] + localGloveClosest[which(rownames(localGloveClosest) == "woman"), ]
+
+
+missingWomanlocalGlove_sorted <- missingWomanlocalGlove %>% sort(decreasing = TRUE)
+missingWomanlocalGlove_sorted[1:5]
+
+# With pretrained glove
+missingWomanpretrainedGlove <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "doctor"), ] - pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "man"), ] + pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "woman"), ]
+
+
+missingWomanpretrainedGlove_sorted <- missingWomanpretrainedGlove %>% sort(decreasing = TRUE)
+missingWomanpretrainedGlove_sorted[1:5]
+```
+
+(5) party:fun::work:?
+
+```{r}
+# With PMI:
+missingWorkPMI <- PMIClosest[which(rownames(PMIClosest) == "fun"), ] - PMIClosest[which(rownames(PMIClosest) == "party"), ] + PMIClosest[which(rownames(PMIClosest) == "work"), ]
+
+
+missingWorkPMI_sorted <- missingWorkPMI %>% sort(decreasing = TRUE)
+missingWorkPMI_sorted[1:5]
+
+# With local glove
+missingWorklocalGlove <- localGloveClosest[which(rownames(localGloveClosest) == "fun"), ] - localGloveClosest[which(rownames(localGloveClosest) == "party"), ] + localGloveClosest[which(rownames(localGloveClosest) == "work"), ]
+
+
+missingWorklocalGlove_sorted <- missingWorklocalGlove %>% sort(decreasing = TRUE)
+missingWorklocalGlove_sorted[1:5]
+
+# With pretrained glove
+missingWorkpretrainedGlove <- pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "fun"), ] - pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "party"), ] + pretrainedGloveClosest[which(rownames(pretrainedGloveClosest) == "work"), ]
+
+
+missingWorkpretrainedGlove_sorted <- missingWorkpretrainedGlove %>% sort(decreasing = TRUE)
+missingWorkpretrainedGlove_sorted[1:5]
+```
+
+
+From the analogies, I see that the comparisons aren't as accurate as a person would be, but they're pretty darn good. It's impressive that the program can learn such associations just through samples of text. At the very least, the program was able to output guesses that were similar to the "correct" answer in the analogies. For example, instead of just guessing the "correct" capital city, the program gives, as its top 5 answers, 5 different capital cities, so at the very least it showed that it could understand that the "category" was capital cities. In one of my examples, I chose to compare Harvard:Yale to Dartmouth:?, seeing what the program would recommend. The program guessed that the analogy was looking at Ivy League colleges, hence why it guessed words pertaining to Ivy League schools.
+
+However, I found great differences in the accuracy of the analogies, depending on the word. Going back to the Harvard:Yale to Dartmouth:? analogy again, the pretrained gloVe was pretty accurate in guessing that the analogy referred to Ivy League schools, but the PMI was pretty far off. From looking at the results, I would say that the GloVe embeddings were more accurate, in the sense that their responses are more like what a human would say. I can't explain why the GloVe embeddings seem to give results like this, but I do know that based off lecture in class, the GloVe embeddings are a computationally efficient heuristic that seems to give pretty accurate results (although in terms of accuracy I don't know how it "objectively" compares to PMI). However, qualitatively it does seem like the GloVe embeddings outperform the PMI embeddings, since the GloVe embeddings give responses that seem to be more in line with what a person would guess. 
+
+Another qualitative observation that I'd like to make is that the programs seem to give results that display our stereotypes (e.g. associating women with teachers or nurses), which is not the fault of the program but rather our own biases. Again, in this case the GloVe embeddings seem to be more "accurate", in that they'd give a response that a person is more likely to give, than the PMI embeddings. 
+
+With even more training, I'm sure the models could be improved, but at the moment it seems impressive that (for the most part), the program can "guess" at least the correct category of the word in the analogy, even if it can't always guess what the answer is supposed to be. 
+
+## Problem 2 Part c
+
+```{r}
+# Perform t-SNE method, store 2-D points in variable t.sne
+
+library(Rtsne)
+set.seed(1987)
+tt <- Rtsne(pt.glove)
+t.sne <- tt$Y
+rownames(t.sne) <- rownames(pt.glove)
+```
+
+```{r}
+# Plot:
+
+plot.pts <- function(X, w1, w2) {
+  plot(X, col = "darkgrey")
+  points(X[w1, 1], X[w1, 2], col = "red", pch = 15, cex = 2)
+  points(X[w2, 1], X[w2, 2], col = "blue", pch = 15, cex = 2)
+}
+```
+
+```{r}
+# Apply example:
+plot.pts(t.sne, "democrat", "politics")
+```
+
+```{r}
+# Examples that produce expected results
+par(mfrow = c(2, 1))
+plot.pts(t.sne, "sports", "athlete")
+plot.pts(t.sne, "school", "student")
+```
+
+```{r}
+# Examples that produce surprising results
+par(mfrow = c(2, 1))
+plot.pts(t.sne, "good", "upright")
+plot.pts(t.sne, "show", "performance")
+```
+
+The similarity between good and upright isn't as close as I expected, even though they're synonyms. This is probably because, even though they're synonyms, the word "good" can be used in many contexts, while "upright" is typically used only in a moralistic context. Similarly, "show" and "performance" aren't quite as close as I expected, but this seems to be because even though there is some overlap in when they are used (e.g. "I went to see a show" vs. "I went to see a performance"), they're not necessarily interchangeable. 
+
+# Problem 3
+
+```{r, message = FALSE, warning = FALSE, error = FALSE}
+# Construct artist embeddings with GloVe
+library(text2vec)
+playlists_file <- "/Users/mark/Documents/Spring2019Classes/S&DS365/Homework/Homework6/playlists.txt"
+playlists <- readLines(playlists_file, warn = FALSE)
+tokensPlaylist <- space_tokenizer(playlists)
+itPlaylist <- itoken(tokensPlaylist, progressbar = FALSE)
+vocabPlaylist <- create_vocabulary(itPlaylist)
+vocabPlaylist <- prune_vocabulary(vocabPlaylist, term_count_min = 50L)
+vectorizerPlaylist <- vocab_vectorizer(vocabPlaylist)
+tcmPlaylist <- create_tcm(itPlaylist, vectorizerPlaylist, skip_grams_window = 750L, 
+                        skip_grams_window_context = "symmetric", 
+                        weights = 1 / rep(1, 750L))
+glovePlaylist <- GlobalVectors$new(word_vectors_size = 100, 
+                           vocabulary = vocabPlaylist, x_max = 10)
+a.embed <- fit_transform(tcmPlaylist, glovePlaylist, n_iter = 50)
+
+# change rownames of a.embed to artist names
+
+artists_file <- "/Users/mark/Documents/Spring2019Classes/S&DS365/Homework/Homework6/artists.txt"
+artist.hash <- readLines(artists_file, warn = FALSE)
+rownames(a.embed) <- artist.hash[as.numeric(rownames(a.embed)) + 1]
+```
+
+## Problem 3 Part a
+
+```{r}
+artistGloveClosest <- sim2(a.embed)
+
+#### Looking at The Beatles:
+artistGloveClosestBeatles <- artistGloveClosest[which(rownames(artistGloveClosest) == "The Beatles"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+artistGloveClosestBeatles[1:5]
+
+#### Looking at Lady Gaga:
+artistGloveClosestLadyGaga <- artistGloveClosest[which(rownames(artistGloveClosest) == "Lady Gaga"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+artistGloveClosestLadyGaga[1:5]
+
+### Looking at Nirvana:
+artistGloveClosestNirvana <- artistGloveClosest[which(rownames(artistGloveClosest) == "Nirvana"), ] %>% sort(decreasing = TRUE)
+
+# Selecting the top 5 words:
+artistGloveClosestNirvana[1:5]
+```
+It's interesting, because the 5 closest artist embeddings for each of the artists are pretty much who you'd expect: they're contemporaries who are in the same genre as that singer. For example, in the case of The Beatles, you see older bands whose style were similar to that of The Beatles (I guess? I don't know much about them, but from what I know, then yes). The same goes for Lady Gaga (where we see pop artists who are contemporaries with Lady Gaga) and Nirvana (where we see bands whose genres are similar to Nirvana, I think?). 
+
+## Problem 3 Part b
+
+```{r}
+# Set up t-SNE
+set.seed(1987)
+tt_artist <- Rtsne(a.embed)
+t.sne_artist <- tt_artist$Y
+rownames(t.sne_artist) <- rownames(a.embed)
+```
+
+```{r}
+# Use t-SNE:
+
+# Example:
+plot.pts(t.sne_artist, "The Temptations", "The Supremes")
+```
+
+```{r}
+# Some of the ones that I thought were cool (first artist is red, second is blue):
+
+# Christian music
+plot.pts(t.sne_artist, "Chris Tomlin", "MercyMe")
+
+# Bands
+plot.pts(t.sne_artist, "Queen", "The Beatles")
+
+# Rap
+plot.pts(t.sne_artist, "Ludacris", "Kanye West")
+
+# Country
+plot.pts(t.sne_artist, "Keith Urban", "Taylor Swift")
+
+#---------
+
+# What genre is Chris Brown? Is he rap? Pop? R&B? Let's see:
+
+# Rap
+plot.pts(t.sne_artist, "Chris Brown", "Kanye West")
+
+# R&B
+plot.pts(t.sne_artist, "Chris Brown", "Fergie")
+
+# Pop
+plot.pts(t.sne_artist, "Chris Brown", "Lady Gaga")
+
+#------------
+# Comparing Rihanna to Fergie. I think of them as similar, and I think of Rihanna as more pop.
+# Does that turn out to be true?
+plot.pts(t.sne_artist, "Rihanna", "Fergie") # Not R&B?
+plot.pts(t.sne_artist, "Rihanna", "Rick Ross") # Huh, look at that
+
+#-----------
+# Settling a debate: what is Drake's deal? Is he a rapper or a singer
+plot.pts(t.sne_artist, "Drake", "Fergie") # Not a singer
+plot.pts(t.sne_artist, "Drake", "Rick Ross") # Yes a rapper
+```
+
+The plots seem to associate singers who work in similar "genres", whether it be pop or rap or Christian music. It's interesting because from looking at the plots, the clusters do seem to be defined by the genres of music that the performers are within. I was interested to see if some of the clusters would be because of differences in solo vs. band groups, but that didn't seem to be a factor. I could clearly see the clusters of different genres, such as Christian music in the bottom, country music to the far right, and rap in the right as well. I was interested in studying Chris Brown and Drake, because they both seem to get their start in rap, but seem to dabble in pop. From these plots, it seems like they're much closer to other rappers than they are to other pop singers (and they are clearly within the "rap" cluster). I also wanted to see how Rihanna would fare - I expected her to be a blend of R&B and pop, but I was very surprised to see that she was clearly in the "rap cluster". 
